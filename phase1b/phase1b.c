@@ -45,8 +45,10 @@ void P1ProcInit(void)
         processTable[i].state=P1_STATE_FREE;
         for (int j = 0; j < P1_MAXPROC; ++j){
             processTable[i].children[j]=-1;
+            processTable[i].quitChildren[j]=-1;
         }
         processTable[i].numChildren=0;
+        processTable[i].numQuitChildren=0;
         processTable[i].parent=-1;
         processTable[i].sid=-1;
         readyQueue[i]=-1;
