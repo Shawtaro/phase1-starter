@@ -19,7 +19,7 @@ typedef struct PCB {
     int             sid;                // semaphore on which process is blocked, if any
     int             parent;             // parent PID
     int             tag;                // process's tag
-    int             children[P1_MAXPROC];// childen PIDs
+    int             children[P1_MAXPROC];// children PIDs
     int             numChildren;        // # of children
     int             quitChildren[P1_MAXPROC];
     int             numQuitChildren;
@@ -45,10 +45,8 @@ void P1ProcInit(void)
         processTable[i].state=P1_STATE_FREE;
         for (int j = 0; j < P1_MAXPROC; ++j){
             processTable[i].children[j]=-1;
-            processTable[i].quitChildren[j]=-1;
         }
         processTable[i].numChildren=0;
-        processTable[i].numQuitChildren=0;
         processTable[i].parent=-1;
         processTable[i].sid=-1;
         readyQueue[i]=-1;
@@ -135,7 +133,12 @@ int P1_Fork(char *name, int (*func)(void*), void *arg, int stacksize, int priori
     if (runningPid==-1){
         P1Dispatch(FALSE);
     }else if(processTable[*pid].priority<processTable[runningPid].priority){
+        processTable[*pid].parent=runningPid;
+        processTable[runningPid].children[processTable[runningPid].numChildren++]=*pid;
         P1Dispatch(FALSE);
+    }else{
+        processTable[*pid].parent=runningPid;
+        processTable[runningPid].children[processTable[runningPid].numChildren++]=*pid;
     }
     // re-enable interrupts if they were previously enabled
     if (prvInterrupt==1){
@@ -143,6 +146,8 @@ int P1_Fork(char *name, int (*func)(void*), void *arg, int stacksize, int priori
     }
     return result;
 }
+
+
 
 void 
 P1_Quit(int status) 
@@ -166,29 +171,47 @@ P1_Quit(int status)
     }
     readyQueue[i]=-1;
     processTable[runningPid].state=P1_STATE_QUIT;
-
     // if first process verify it doesn't have children, otherwise give children to first process
     if (runningPid==0&&processTable[0].numChildren>0){
-        USLOSS_Console("“First process quitting with children, halting.\n");
+        USLOSS_Console("First process quitting with children, halting.\n");
         USLOSS_Halt(1);
     }
+
     processTable[runningPid].status=status;
     processTable[runningPid].state=P1_STATE_QUIT;
     for (int i = 0; i < processTable[runningPid].numChildren; ++i){
-        processTable[0].children[processTable[runningPid].numChildren+i]=processTable[runningPid].children[i];
+        processTable[0].children[processTable[0].numChildren+i]=processTable[runningPid].children[i];
+        processTable[processTable[runningPid].children[i]].parent=0;
         processTable[0].numChildren++;
     }
 
+
     // add ourself to list of our parent's children that have quit
-    processTable[0].quitChildren[processTable[0].numQuitChildren++]=runningPid;
-
-    // if parent is in state P1_STATE_JOINING set its state to P1_STATE_READY
     int parent=processTable[runningPid].parent;
-    if (processTable[parent].state==P1_STATE_JOINING){
-        processTable[parent].state=P1_STATE_READY;
-    }
-    P1Dispatch(FALSE);
 
+    if (parent>=0){
+        processTable[parent].quitChildren[processTable[parent].numQuitChildren++]=runningPid;
+        int i=0;
+        for (i = 0; i < processTable[parent].numChildren; i++){
+            if(processTable[parent].children[i]==runningPid){
+                processTable[parent].children[i]=-1;
+                processTable[parent].numChildren--;
+                break;
+            }
+        }
+
+        for(;i<P1_MAXPROC-1;i++){
+            processTable[parent].children[i]=processTable[parent].children[i+1];
+            processTable[parent].children[i+1]=-1;
+        }
+
+        // if parent is in state P1_STATE_JOINING set its state to P1_STATE_READY
+        if (processTable[parent].state==P1_STATE_JOINING){
+            processTable[parent].state=P1_STATE_READY;
+        }
+    }
+
+    P1Dispatch(FALSE);
     // should never get here
     assert(0);
 }
@@ -201,17 +224,18 @@ P1GetChildStatus(int tag, int *cpid, int *status)
     if ((USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) == 0){
         USLOSS_IllegalInstruction();
     }
-
     int result = P1_SUCCESS;
     // invalid tag
     if(tag!=0&&tag!=1){
         return P1_INVALID_TAG;
     }
 
+    int runningPid=P1_GetPid();
     // no children
     int nextChildPid = -1;
-    for (int i = 0; i < processTable[*cpid].numChildren; i++){
-        int tempPid=processTable[*cpid].quitChildren[i];
+    USLOSS_Console("%d %d\n",runningPid,processTable[runningPid].numQuitChildren);
+    for (int i = 0; i < processTable[runningPid].numQuitChildren; i++){
+        int tempPid=processTable[runningPid].quitChildren[i];
         if (processTable[tempPid].tag==tag){
             nextChildPid=tempPid;
             break;
@@ -223,12 +247,12 @@ P1GetChildStatus(int tag, int *cpid, int *status)
     }
 
     // no qiuit
-    if(processTable[*cpid].numChildren>0&&processTable[*cpid].numQuitChildren==0){
+    if(processTable[runningPid].numChildren>0&&processTable[runningPid].numQuitChildren==0){
         return P1_NO_QUIT;
     }
 
     *cpid=nextChildPid;
-    *status=processTable[*cpid].status;
+    *status=processTable[runningPid].status;
     P1ContextFree(processTable[*cpid].cid);
     return result;
 }
@@ -283,12 +307,11 @@ P1Dispatch(int rotate)
 
     // select the highest-priority runnable process
     for (int i = 0; readyQueue[i]!=-1; ++i){
-        if(readyQueue[i]!=-1&&processTable[readyQueue[i]].priority<highestPriority){
+        if(readyQueue[i]!=runningPid&&processTable[readyQueue[i]].priority<highestPriority){
             highestPriority=processTable[readyQueue[i]].priority;
             highestPid=readyQueue[i];
         }
     }
-
     // call P1ContextSwitch to switch to that process
     if (runningPid<0){
         processTable[highestPid].state=P1_STATE_RUNNING;
