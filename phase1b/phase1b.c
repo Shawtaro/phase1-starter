@@ -108,7 +108,6 @@ int P1_Fork(char *name, int (*func)(void*), void *arg, int stacksize, int priori
             break;
         }
     }
-    
     if (*pid >= P1_MAXPROC){
         return P1_TOO_MANY_PROCESSES;
     }
@@ -123,7 +122,7 @@ int P1_Fork(char *name, int (*func)(void*), void *arg, int stacksize, int priori
     processTable[*pid].state=P1_STATE_READY;
     
     int index;
-    for (index = 0; readyQueue[index]!=-1; ++index){}
+    for (index = 0; readyQueue[index]!=-1&&index<P1_MAXPROC; ++index){}
     readyQueue[index]=*pid;
 
     // if this is the first process or this process's priority is higher than the 
@@ -163,7 +162,7 @@ P1_Quit(int status)
 
     // remove from ready queue, set status to P1_STATE_QUIT
     int i=0;
-    for (i = 0; readyQueue[i+1]!=-1; ++i){
+    for (i = 0; readyQueue[i+1]!=-1&&(i+1)<P1_MAXPROC; ++i){
         if (readyQueue[i]==runningPid){
             readyQueue[i]=readyQueue[i+1];
             readyQueue[i+1]=runningPid;
@@ -233,7 +232,7 @@ P1GetChildStatus(int tag, int *cpid, int *status)
     int runningPid=P1_GetPid();
     // no children
     int nextChildPid = -1;
-    USLOSS_Console("%d %d\n",runningPid,processTable[runningPid].numQuitChildren);
+
     for (int i = 0; i < processTable[runningPid].numQuitChildren; i++){
         int tempPid=processTable[runningPid].quitChildren[i];
         if (processTable[tempPid].tag==tag){
@@ -252,7 +251,7 @@ P1GetChildStatus(int tag, int *cpid, int *status)
     }
 
     *cpid=nextChildPid;
-    *status=processTable[runningPid].status;
+    *status=processTable[*cpid].status;
     P1ContextFree(processTable[*cpid].cid);
     return result;
 }
@@ -266,7 +265,7 @@ P1SetState(int pid, P1_State state, int sid)
     }
     int result = P1_SUCCESS;
     // do stuff here
-    if (pid<0||pid>P1_MAXPROC||processTable[pid].cid==-1){
+    if (pid<0||pid>=P1_MAXPROC||processTable[pid].cid==-1){
        return P1_INVALID_PID;
     }
     if (state!=P1_STATE_READY||state!=P1_STATE_JOINING||state!=P1_STATE_BLOCKED||state!=P1_STATE_QUIT){
@@ -304,9 +303,9 @@ P1Dispatch(int rotate)
     int runningPid=P1_GetPid();
     int highestPriority=7;
     int highestPid=-1;
-
+    
     // select the highest-priority runnable process
-    for (int i = 0; readyQueue[i]!=-1; ++i){
+    for (int i = 0; readyQueue[i]!=-1&&i<P1_MAXPROC; ++i){
         if(readyQueue[i]!=runningPid&&processTable[readyQueue[i]].priority<highestPriority){
             highestPriority=processTable[readyQueue[i]].priority;
             highestPid=readyQueue[i];
@@ -324,7 +323,7 @@ P1Dispatch(int rotate)
         processTable[runningPid].state=P1_STATE_READY;
         processTable[highestPid].state=P1_STATE_RUNNING;
         // move the runningPid to the tail of ready queue
-        for (int i = 0; readyQueue[i+1]!=-1; ++i){
+        for (int i = 0; readyQueue[i+1]!=-1&&(i+1)<P1_MAXPROC; ++i){
             if (readyQueue[i]==runningPid){
                 readyQueue[i]=readyQueue[i+1];
                 readyQueue[i+1]=runningPid;
@@ -344,7 +343,7 @@ P1_GetProcInfo(int pid, P1_ProcInfo *info)
     int         result = P1_SUCCESS;
     // fill in info here
     
-    if (pid<0||pid>P1_MAXPROC||processTable[pid].cid==-1){
+    if (pid<0||pid>=P1_MAXPROC||processTable[pid].cid==-1){
        return P1_INVALID_PID;
     }
     strcpy(info->name,processTable[pid].name);
