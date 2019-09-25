@@ -45,8 +45,10 @@ void P1ProcInit(void)
         processTable[i].state=P1_STATE_FREE;
         for (int j = 0; j < P1_MAXPROC; ++j){
             processTable[i].children[j]=-1;
+            processTable[i].quitChildren[j]=-1;
         }
         processTable[i].numChildren=0;
+        processTable[i].numQuitChildren=0;
         processTable[i].parent=-1;
         processTable[i].sid=-1;
         readyQueue[i]=-1;
@@ -59,6 +61,7 @@ int P1_GetPid(void)
     if ((USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) == 0){
         USLOSS_IllegalInstruction();
     }
+    // find the running pid
     for (int pid = 0; pid < P1_MAXPROC; pid++){
         if (processTable[pid].state==P1_STATE_RUNNING){
             return pid;
@@ -67,6 +70,7 @@ int P1_GetPid(void)
     return -1;
 }
 
+// a wrapper function to do quit
 int (*currentFunc)(void*);
 void launch(void* arg){
     P1_Quit(currentFunc(arg));
@@ -126,7 +130,7 @@ int P1_Fork(char *name, int (*func)(void*), void *arg, int stacksize, int priori
     processTable[*pid].priority=priority;
     processTable[*pid].tag=tag;
     processTable[*pid].state=P1_STATE_READY;
-    
+    // add pid into readyQueue
     int index;
     for (index = 0; readyQueue[index]!=-1&&index<P1_MAXPROC; ++index){}
     readyQueue[index]=*pid;
@@ -134,7 +138,6 @@ int P1_Fork(char *name, int (*func)(void*), void *arg, int stacksize, int priori
     // if this is the first process or this process's priority is higher than the 
     //    currently running process call P1Dispatch(FALSE)
     int runningPid=P1_GetPid();
-
     if (runningPid==-1){
         P1Dispatch(FALSE);
     }else if(processTable[*pid].priority<processTable[runningPid].priority){
@@ -179,7 +182,6 @@ P1_Quit(int status)
         USLOSS_Console("First process quitting with children, halting.\n");
         USLOSS_Halt(1);
     }
-
     processTable[runningPid].status=status;
     processTable[runningPid].state=P1_STATE_QUIT;
     for (int i = 0; i < processTable[runningPid].numChildren; ++i){
@@ -190,9 +192,9 @@ P1_Quit(int status)
 
     // add ourself to list of our parent's children that have quit
     int parent=processTable[runningPid].parent;
-
     if (parent>=0){
         processTable[parent].quitChildren[processTable[parent].numQuitChildren++]=runningPid;
+        // remove quit child from its parent
         int i=0;
         for (i = 0; i < processTable[parent].numChildren; i++){
             if(processTable[parent].children[i]==runningPid){
@@ -201,12 +203,11 @@ P1_Quit(int status)
                 break;
             }
         }
-
+        // update the children list for parent
         for(;i<P1_MAXPROC-1;i++){
             processTable[parent].children[i]=processTable[parent].children[i+1];
             processTable[parent].children[i+1]=-1;
         }
-
         // if parent is in state P1_STATE_JOINING set its state to P1_STATE_READY
         if (processTable[parent].state==P1_STATE_JOINING){
             processTable[parent].state=P1_STATE_READY;
@@ -235,7 +236,7 @@ P1GetChildStatus(int tag, int *cpid, int *status)
     int runningPid=P1_GetPid();
     // no children
     int nextChildPid = -1;
-
+    // find the next quit child
     for (int i = 0; i < processTable[runningPid].numQuitChildren; i++){
         int tempPid=processTable[runningPid].quitChildren[i];
         if (processTable[tempPid].tag==tag){
@@ -243,7 +244,7 @@ P1GetChildStatus(int tag, int *cpid, int *status)
             break;
         }
     }
-
+    // if no children
     if (nextChildPid==-1){
         return P1_NO_CHILDREN;
     }
@@ -252,7 +253,7 @@ P1GetChildStatus(int tag, int *cpid, int *status)
     if(processTable[runningPid].numChildren>0&&processTable[runningPid].numQuitChildren==0){
         return P1_NO_QUIT;
     }
-
+    // update messages
     *cpid=nextChildPid;
     *status=processTable[*cpid].status;
     P1ContextFree(processTable[*cpid].cid);
@@ -267,13 +268,14 @@ P1SetState(int pid, P1_State state, int sid)
         USLOSS_IllegalInstruction();
     }
     int result = P1_SUCCESS;
-    // do stuff here
+    // judgement
     if (pid<0||pid>=P1_MAXPROC||processTable[pid].cid==-1){
        return P1_INVALID_PID;
     }
     if (state!=P1_STATE_READY||state!=P1_STATE_JOINING||state!=P1_STATE_BLOCKED||state!=P1_STATE_QUIT){
         return P1_INVALID_STATE;
     }
+
     if (state == P1_STATE_JOINING){
         // a child has quit
         for (int i = 0; i < P1_MAXPROC; ++i){
@@ -283,6 +285,7 @@ P1SetState(int pid, P1_State state, int sid)
             }
         }
     }
+    // set sid 
     if (state==P1_STATE_BLOCKED){
         processTable[pid].sid=sid;
     }
@@ -297,7 +300,7 @@ P1Dispatch(int rotate)
     if ((USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) == 0){
         USLOSS_IllegalInstruction();
     }
-    
+    // no runnable process in readyQueue
     if (readyQueue[0]==-1){
         USLOSS_Console("No runnable processes, halting.\n");
         USLOSS_Halt(0);
@@ -344,11 +347,11 @@ P1_GetProcInfo(int pid, P1_ProcInfo *info)
         USLOSS_IllegalInstruction();
     }
     int         result = P1_SUCCESS;
-    // fill in info here
-    
+    // judge pid 
     if (pid<0||pid>=P1_MAXPROC||processTable[pid].cid==-1){
        return P1_INVALID_PID;
     }
+    // set process info 
     strcpy(info->name,processTable[pid].name);
     info->state=processTable[pid].state;
     info->sid=processTable[pid].sid;
