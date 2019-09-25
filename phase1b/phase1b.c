@@ -67,6 +67,11 @@ int P1_GetPid(void)
     return -1;
 }
 
+int (*currentFunc)(void*);
+void launch(void* arg){
+    P1_Quit(currentFunc(arg));
+}
+
 int P1_Fork(char *name, int (*func)(void*), void *arg, int stacksize, int priority, int tag, int *pid ) 
 {
     int result = P1_SUCCESS;
@@ -113,7 +118,8 @@ int P1_Fork(char *name, int (*func)(void*), void *arg, int stacksize, int priori
     }
     // create a context using P1ContextCreate
     int cid;
-    P1ContextCreate((void*) func,arg,stacksize,&cid);
+    currentFunc=func;
+    P1ContextCreate(launch,arg,stacksize,&cid);
     // allocate and initialize PCB
     processTable[*pid].cid=cid;
     strcpy(processTable[*pid].name,name);
@@ -145,8 +151,6 @@ int P1_Fork(char *name, int (*func)(void*), void *arg, int stacksize, int priori
     }
     return result;
 }
-
-
 
 void 
 P1_Quit(int status) 
@@ -183,7 +187,6 @@ P1_Quit(int status)
         processTable[processTable[runningPid].children[i]].parent=0;
         processTable[0].numChildren++;
     }
-
 
     // add ourself to list of our parent's children that have quit
     int parent=processTable[runningPid].parent;
