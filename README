@@ -1,7 +1,10 @@
 USLOSS Phase 1
 
-Note that phase1a.c has some errors in implementation. For other phases rely on phase1a library:
+Note that phase1[x].c may have some errors in implementation. For phase1[x+1].c rely on phase1[x] library:
 
-make sure the resulting file is named libphase1a-1.0.a.
+e.g. to test phase1b.c, use libphase1a-1.0.a 
+e.g. to test phase1c.c, use libphase1a-1.0.a and libphase1a-1.0.b
+
+make sure the resulting file is named libphase1a-1.0.[x].
 Create the directory ~/cs452/lib and put the library into it. 
-Typing "make" in phase1b should link against this library.
+Typing "make" in phase1[x+1] should link against this library.
