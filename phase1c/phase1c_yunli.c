@@ -74,7 +74,7 @@ int P1_SemFree(int sid)
         USLOSS_IllegalInstruction();
     }
     // check sid
-    if(sid<0||sid>=P1_MAXSEM||sems[sid].name[0]=='\0'){
+    if(sid<0||sid>=P1_MAXSEM){
         return P1_INVALID_SID;
     }
     // check block
