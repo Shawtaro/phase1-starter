@@ -74,7 +74,7 @@ int P1_SemFree(int sid)
         USLOSS_IllegalInstruction();
     }
     // check sid
-    if(sid<0||sid>=P1_MAXSEM){
+    if(sid<0||sid>=P1_MAXSEM||sems[sid].name[0]=='\0'){
         return P1_INVALID_SID;
     }
     // check block
@@ -102,15 +102,17 @@ int P1_P(int sid)
     if(sid<0||sid>=P1_MAXSEM||sems[sid].name[0]=='\0'){
         return P1_INVALID_SID;
     }
+
     // disable interrupts
     int prvInterrupt=P1DisableInterrupts();
-
     // while value == 0
     //      set state to P1_STATE_BLOCKED
     int pid=P1_GetPid();
     while(sems[sid].value == 0){
+        P1DisableInterrupts();
         P1SetState(pid,P1_STATE_BLOCKED,sid);
         P1Dispatch(FALSE);
+        P1EnableInterrupts();
     }
     // value--
     sems[sid].value--;
@@ -134,7 +136,6 @@ int P1_V(int sid)
     }
     // disable interrupts
     int prvInterrupt=P1DisableInterrupts();
-
     // value++
     sems[sid].value++;
     // if a process is waiting for this semaphore
