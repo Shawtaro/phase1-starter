@@ -14,7 +14,6 @@ Unblocks(void *arg)
     USLOSS_Console("V on semaphore.\n");
     rc = P1_V(sem);
     assert(rc == P1_SUCCESS);
-    // will never get here as Blocks will run and call USLOSS_Halt.
     return 12;
 }
 
@@ -25,7 +24,7 @@ Blocks(void *arg)
     int rc;
     int pid;
 
-    rc = P1_Fork("Unblocks", Unblocks, (void *) sem, USLOSS_MIN_STACK, 2, 0, &pid);
+    rc = P1_Fork("Unblocks", Unblocks, (void *) sem, USLOSS_MIN_STACK, 1, 0, &pid);
     assert(rc == P1_SUCCESS);
     USLOSS_Console("P on semaphore.\n");
     rc = P1_P(sem);
@@ -38,6 +37,7 @@ Blocks(void *arg)
     return 0;
 }
 
+
 void
 startup(int argc, char **argv)
 {
@@ -48,13 +48,11 @@ startup(int argc, char **argv)
     P1SemInit();
     rc = P1_SemCreate("sem", 0, &sem);
     assert(rc == P1_SUCCESS);
-    // Blocks blocks then Unblocks unblocks it
-    rc = P1_Fork("Blocks", Blocks, (void *) sem, USLOSS_MIN_STACK, 1, 0, &pid);
+    // Unblocks V's semaphore before Block P's
+    rc = P1_Fork("Blocks", Blocks, (void *) sem, USLOSS_MIN_STACK, 2, 0, &pid);
     assert(rc == P1_SUCCESS);
     assert(0);
 }
-
-void dummy(int type, void *arg) {};
 
 void test_setup(int argc, char **argv) {}
 
