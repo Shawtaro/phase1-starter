@@ -11,7 +11,7 @@ static void DeviceHandler(int type, void *arg);
 static void SyscallHandler(int type, void *arg);
 static void IllegalInstructionHandler(int type, void *arg);
 
-static int sentinel(void *arg);
+static int* device_semaphores[USLOSS_ALARM_UNITS+USLOSS_CLOCK_UNITS+USLOSS_DISK_UNITS+USLOSS_TERM_UNITS];
 
 void 
 startup(int argc, char **argv)
@@ -20,6 +20,15 @@ startup(int argc, char **argv)
     P1SemInit();
 
     // initialize device datastructures
+    P1_SemCreate("Alarm",0,device_semaphores[0]);
+    P1_SemCreate("Clock",0,device_semaphores[1]);
+    P1_SemCreate("Disk_0",0,device_semaphores[2]);
+    P1_SemCreate("Disk_1",0,device_semaphores[3]);
+    P1_SemCreate("Term_0",0,device_semaphores[4]);
+    P1_SemCreate("Term_1",0,device_semaphores[5]);
+    P1_SemCreate("Term_2",0,device_semaphores[6]);
+    P1_SemCreate("Term_3",0,device_semaphores[7]);
+
     // put device interrupt handlers into interrupt vector
     USLOSS_IntVec[USLOSS_SYSCALL_INT] = SyscallHandler;
     USLOSS_IntVec[USLOSS_ILLEGAL_INT] = IllegalInstructionHandler;
@@ -37,8 +46,56 @@ int
 P1_WaitDevice(int type, int unit, int *status) 
 {
     int     result = P1_SUCCESS;
+    
+        // check for kernel mode
+    if ((USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) == 0){
+        USLOSS_IllegalInstruction();
+    }
+    
+    // Check parameters, then,
     // P device's semaphore
-    // set *status to device's status
+    switch(type){
+        USLOSS_CLOCK_DEV:
+            if(unit>=USLOSS_CLOCK_UNITS){
+                result = P1_INVALID_UNIT;
+                return result;
+            }
+            P1_P(*device_semaphores[1]);
+            USLOSS_DeviceInput(USLOSS_CLOCK_DEV, unit, status);
+            break;
+        USLOSS_ALARM_DEV:
+               if(unit>=USLOSS_ALARM_UNITS){
+                result = P1_INVALID_UNIT;
+                return result;
+            }
+            P1_P(*device_semaphores[0]);
+            USLOSS_DeviceInput(USLOSS_ALARM_DEV, unit, status);
+            break;
+        USLOSS_DISK_DEV:
+            if(unit>=USLOSS_DISK_UNITS){
+                result = P1_INVALID_UNIT;
+                return result;
+            }
+            P1_P(*device_semaphores[2+unit]);
+            USLOSS_DeviceInput(USLOSS_DISK_DEV, unit, status);
+            break;
+        USLOSS_TERM_DEV:
+            if(unit>=USLOSS_TERM_UNITS){
+                result = P1_INVALID_UNIT;
+                return result;
+            }
+            P1_P(*device_semaphores[4+unit]);
+            USLOSS_DeviceInput(USLOSS_TERM_DEV, unit, status);
+
+            break;
+        default:
+            result = P1_INVALID_TYPE;
+            return result;
+    }
+    
+    // TODO:
+    // not sure about setting *status to device's status
+    // the wait was aborted via P1_WakeupDevice
     return result;
 }
 
@@ -72,7 +129,12 @@ sentinel (void *notused)
     assert(rc == P1_SUCCESS);
 
     // enable interrupts
+    P1EnableInterrupts();
     // while sentinel has children
+    int* status;
+    while(P1GetChildStatus(0,&pid,status)!=P1_NO_CHILDREN){
+        USLOSS_WaitInt();
+    }
     //      get children that have quit via P1GetChildStatus
     //      wait for an interrupt via USLOSS_WaitInt
     USLOSS_Console("Sentinel quitting.\n");
