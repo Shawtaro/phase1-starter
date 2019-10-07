@@ -12,6 +12,7 @@ static void SyscallHandler(int type, void *arg);
 static void IllegalInstructionHandler(int type, void *arg);
 
 static int* device_semaphores[USLOSS_ALARM_UNITS+USLOSS_CLOCK_UNITS+USLOSS_DISK_UNITS+USLOSS_TERM_UNITS];
+int ticks;
 
 void 
 startup(int argc, char **argv)
@@ -109,9 +110,20 @@ P1_WakeupDevice(int type, int unit, int status, int abort)
 }
 
 static void
-DeviceHandler(int type, void *arg) 
+DeviceHandler(int type, void *arg) // assuming args 0 and 1 art unit and status...
 {
     // if clock device
+    if(type= USLOSS_CLOCK_DEV){
+        if(tics%5==0){
+            P1_WakeupDevice(type, arg[0],arg[1],FALSE);        
+        }
+        else if(tics%4==0){
+            P1Dispatch(TRUE);
+        }
+    } else
+        P1_WakeupDevice(type, arg[0],arg[1],FALSE); 
+    
+    tics++;
     //      P1_WakeupDevice every 5 ticks
     //      P1Dispatch(TRUE) every 4 ticks
     // else
