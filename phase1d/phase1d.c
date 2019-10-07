@@ -55,8 +55,8 @@ static void
 DeviceHandler(int type, void *arg) 
 {
     // if clock device
-    //      P1_WakeupDevice every 4 ticks
-    //      P1Dispatch(TRUE) every 5 ticks
+    //      P1_WakeupDevice every 5 ticks
+    //      P1Dispatch(TRUE) every 4 ticks
     // else
     //      P1_WakeupDevice
 }
