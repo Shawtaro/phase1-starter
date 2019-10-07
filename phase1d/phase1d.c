@@ -146,13 +146,33 @@ P1_Join(int tag, int *pid, int *status)
 {
     int result = P1_SUCCESS;
     // check for kernel mode
+    if ((USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) == 0){
+        USLOSS_IllegalInstruction();
+    }
     // disable interrupts
+    int prvInterrupt=P1DisableInterrupts();
     // do
+    int tmp=P1_NO_QUIT;
     //  get a child that has quit via P1GetChildStatus 
-    //  if no children have quit
+    while(tmp==P1_NO_QUIT){
+        int tmp = P1GetChildStatus(tag,pid,status);
+        if(tmp==P1_INVALID_TAG)
+            return P1_INVALID_TAG;
+        if(tmp==P1_NO_CHILDREN)
+            return P1_NO_CHILDREN;
+        //  if no children have quit
+        if(tmp==P1_NO_QUIT){
+            P1SetState(*pid,P1_STATE_JOINING,0);
+            P1Dispatch(FALSE);
+        }
+    }
     //      set state to P1_STATE_JOINING vi P1SetState
     //      P1Dispatch(FALSE)
     // until either a child quit or there are no more children
+    if(prvInterrupt){
+        P1EnableInterrupts;
+    }
+    
     return result;
 }
 
