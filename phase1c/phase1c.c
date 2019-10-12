@@ -109,10 +109,12 @@ int P1_P(int sid)
     //      set state to P1_STATE_BLOCKED
     int pid=P1_GetPid();
     while(sems[sid].value == 0){
-        P1DisableInterrupts();
-        P1SetState(pid,P1_STATE_BLOCKED,sid);
+        int prv=P1DisableInterrupts();
+        result=P1SetState(pid,P1_STATE_BLOCKED,sid);
+        if (prv==1){
+            P1EnableInterrupts();
+        }
         P1Dispatch(FALSE);
-        P1EnableInterrupts();
     }
     // value--
     sems[sid].value--;
@@ -142,13 +144,13 @@ int P1_V(int sid)
     //      set the process's state to P1_STATE_READY
     for (int i = 0; i < P1_MAXPROC; ++i)
     {
-        P1_ProcInfo *info = malloc(sizeof(P1_ProcInfo));
-        if(P1_GetProcInfo(i,info)==P1_SUCCESS){
-            if (info->sid == sid){
-                P1SetState(i,P1_STATE_READY,sid);
+        P1_ProcInfo info;
+        if(P1_GetProcInfo(i,&info)==P1_SUCCESS){
+            if (info.sid == sid){
+                result=P1SetState(i,P1_STATE_READY,sid);
             }
         }
-        free(info);
+        P1Dispatch(FALSE);
     }
     // re-enable interrupts if they were previously enabled
     if (prvInterrupt==1){
@@ -167,7 +169,7 @@ int P1_SemName(int sid, char *name) {
     if(sid<0||sid>=P1_MAXSEM||sems[sid].name[0]=='\0'){
         return P1_INVALID_SID;
     }
-    if(sems[sid].name[0]=='\0'){
+    if(name==NULL){
         return P1_NAME_IS_NULL;
     }
     strcpy(name,sems[sid].name);
