@@ -122,8 +122,9 @@ int P1_Fork(char *name, int (*func)(void*), void *arg, int stacksize, int priori
     }
     // create a context using P1ContextCreate
     int cid;
+    int rc;
     currentFunc=func;
-    P1ContextCreate(launch,arg,stacksize,&cid);
+    rc=P1ContextCreate(launch,arg,stacksize,&cid);
     // allocate and initialize PCB
     processTable[*pid].cid=cid;
     strcpy(processTable[*pid].name,name);
@@ -163,7 +164,8 @@ P1_Quit(int status)
         USLOSS_IllegalInstruction();
     }
     // disable interrupts
-    P1DisableInterrupts();
+    int prvInterrupt;
+    prvInterrupt=P1DisableInterrupts();
     
     int runningPid=P1_GetPid();
 
@@ -213,7 +215,6 @@ P1_Quit(int status)
             processTable[parent].state=P1_STATE_READY;
         }
     }
-
     P1Dispatch(FALSE);
     // should never get here
     assert(0);
@@ -244,19 +245,30 @@ P1GetChildStatus(int tag, int *cpid, int *status)
             break;
         }
     }
+    //USLOSS_Console("%d\n",nextChildPid);
     // if no children
-    if (nextChildPid==-1){
+    if (processTable[runningPid].numChildren==0&&nextChildPid==-1){
         return P1_NO_CHILDREN;
     }
-
     // no qiuit
-    if(processTable[runningPid].numChildren>0&&processTable[runningPid].numQuitChildren==0){
+    if(processTable[runningPid].numChildren>0){
         return P1_NO_QUIT;
     }
+    for (int i = 0; i < processTable[runningPid].numQuitChildren; i++){
+        if (processTable[runningPid].quitChildren[i]==processTable[runningPid].quitChildren[nextChildPid]){
+            int tmp=processTable[runningPid].quitChildren[i];
+            processTable[runningPid].quitChildren[i] = processTable[runningPid].quitChildren[i+1];
+            processTable[runningPid].quitChildren[i+1] = tmp;
+        }
+    }
+    processTable[runningPid].quitChildren[processTable[runningPid].numQuitChildren--]=-1;
+
     // update messages
     *cpid=nextChildPid;
     *status=processTable[*cpid].status;
-    P1ContextFree(processTable[*cpid].cid);
+    int rc;
+    rc=P1ContextFree(processTable[*cpid].cid);
+    processTable[nextChildPid].cid=-1;
     return result;
 }
 
@@ -272,14 +284,14 @@ P1SetState(int pid, P1_State state, int sid)
     if (pid<0||pid>=P1_MAXPROC||processTable[pid].cid==-1){
        return P1_INVALID_PID;
     }
-    if (state!=P1_STATE_READY||state!=P1_STATE_JOINING||state!=P1_STATE_BLOCKED||state!=P1_STATE_QUIT){
+    if (state!=P1_STATE_READY&&state!=P1_STATE_JOINING&&state!=P1_STATE_BLOCKED&&state!=P1_STATE_QUIT){
         return P1_INVALID_STATE;
     }
 
     if (state == P1_STATE_JOINING){
         // a child has quit
         for (int i = 0; i < P1_MAXPROC; ++i){
-            int cpid=processTable[pid].children[i];
+            int cpid=processTable[pid].quitChildren[i];
             if(cpid!=-1&&processTable[cpid].state==P1_STATE_QUIT){
                 return P1_CHILD_QUIT;
             }
@@ -312,19 +324,20 @@ P1Dispatch(int rotate)
     
     // select the highest-priority runnable process
     for (int i = 0; readyQueue[i]!=-1&&i<P1_MAXPROC; ++i){
-        if(readyQueue[i]!=runningPid&&processTable[readyQueue[i]].priority<highestPriority){
+        if(readyQueue[i]!=runningPid&&processTable[readyQueue[i]].priority<highestPriority&&processTable[readyQueue[i]].state==P1_STATE_READY){
             highestPriority=processTable[readyQueue[i]].priority;
             highestPid=readyQueue[i];
         }
     }
     // call P1ContextSwitch to switch to that process
+    int rc;
     if (runningPid<0){
         processTable[highestPid].state=P1_STATE_RUNNING;
-        P1ContextSwitch(processTable[highestPid].cid);
+        rc=P1ContextSwitch(processTable[highestPid].cid);
     }else if(highestPid!=-1&&highestPriority<processTable[runningPid].priority){
         processTable[runningPid].state=P1_STATE_READY;
         processTable[highestPid].state=P1_STATE_RUNNING;
-        P1ContextSwitch(processTable[highestPid].cid);
+        rc=P1ContextSwitch(processTable[highestPid].cid);
     }else if(rotate==TRUE&&highestPriority==processTable[runningPid].priority){
         processTable[runningPid].state=P1_STATE_READY;
         processTable[highestPid].state=P1_STATE_RUNNING;
@@ -335,7 +348,7 @@ P1Dispatch(int rotate)
                 readyQueue[i+1]=runningPid;
             }
         }
-        P1ContextSwitch(processTable[highestPid].cid);
+        rc=P1ContextSwitch(processTable[highestPid].cid);
     }
 }
 
